@@ -120,6 +120,41 @@ test('Lab picker: a preset writes an Observation with the catalogue LOINC and un
     assert.ok(lab.f.requests.some((r) => r.method === 'GET' && r.path === '/fhir/Observation/created-1'))
 })
 
+test('Lab picker: HbA1c and blood pressure write their LOINC codes with UCUM % and mm[Hg]', async (t) => {
+    const lab = await startLabApp(t)
+    const cases = [
+        { test: 'hba1c', preset: '7.2', loinc: '4548-4', unit: '%' },
+        { test: 'systolic', preset: '135', loinc: '8480-6', unit: 'mm[Hg]' },
+        { test: 'diastolic', preset: '88', loinc: '8462-4', unit: 'mm[Hg]' },
+    ]
+
+    for (const [index, entry] of cases.entries()) {
+        const response = await post(lab, { test: entry.test, preset: entry.preset, value: '' })
+
+        assert.equal(response.statusCode, 200, response.body)
+
+        const stored = lab.f.created.get(`Observation/created-${index + 1}`) as {
+            code: { coding: { code: string }[] }
+            valueQuantity: { value: number; code: string }
+        }
+
+        assert.equal(stored.code.coding[0]?.code, entry.loinc)
+        assert.equal(stored.valueQuantity.code, entry.unit)
+        assert.equal(stored.valueQuantity.value, Number(entry.preset))
+    }
+})
+
+test('Lab picker: the catalogue is grouped into laboratory tests and vital signs', async (t) => {
+    const lab = await startLabApp(t)
+    const page = await lab.app.inject({ url: '/lab', cookies: lab.cookies })
+    const laboratory = page.body.indexOf('>Laboratory<')
+    const vitals = page.body.indexOf('>Vital signs<')
+
+    assert.ok(laboratory > 0 && vitals > laboratory, 'Laboratory comes before Vital signs')
+    assert.ok(page.body.indexOf('8480-6') > vitals, 'Blood pressure is listed under Vital signs')
+    assert.ok(page.body.indexOf('4548-4') < vitals, 'HbA1c is listed under Laboratory')
+})
+
 test('Lab picker: a typed value overrides the preset and accepts a decimal comma', async (t) => {
     const lab = await startLabApp(t)
     const response = await post(lab, { test: 'creatinine', preset: '75', value: '132' })

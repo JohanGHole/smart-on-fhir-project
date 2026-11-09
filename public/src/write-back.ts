@@ -4,9 +4,10 @@ import { z } from 'zod'
 import { AppError, type Config } from './config.ts'
 import { createResource, cReactiveProtein, journalNote, temperature } from './extensions.ts'
 import { escapeHtml, fhir, IdSchema, isSameSecret, ReferenceSchema, referenceId } from './http.ts'
-import { appPage, scopeHint, type RouteDeps } from './routes.ts'
+import { appPage, scopeHint, type RouteDeps, type Tab } from './routes.ts'
 import { missingScopes } from './scopes.ts'
 import type { Session } from './types.ts'
+import { card, notice } from './ui.ts'
 
 const FORM_CONTENT_TYPE = 'application/x-www-form-urlencoded'
 
@@ -107,7 +108,16 @@ export function registerWriteBack(app: FastifyInstance, deps: RouteDeps): void {
     app.get('/write', async (request, reply) => {
         const session = deps.requireSession(request)
 
-        return reply.type('text/html').send(appPage('Write back', formsContent(session)))
+        return reply
+            .type('text/html')
+            .send(
+                appPage(
+                    'Write back',
+                    formsContent(session),
+                    '/write',
+                    'Every form writes to the patient and consultation of this launch. Nothing is sent until you submit, and every save is read back from the FHIR server.',
+                ),
+            )
     })
 
     app.post('/write/temperature', async (request, reply) => {
@@ -196,6 +206,7 @@ export async function sendResult(
     config: Config,
     session: Session,
     created: { resourceType: string; id: string },
+    active: Tab = '/write',
 ): Promise<FastifyReply> {
     const title = 'Saved to the EPJ'
     const identity = `${created.resourceType}/${created.id}`
@@ -206,7 +217,7 @@ export async function sendResult(
         return reply
             .code(200)
             .type('text/html')
-            .send(appPage(title, savedContent(identity, readBack)))
+            .send(appPage(title, savedContent(identity, readBack, active), active))
     } catch (error) {
         // The resource exists, so say so and never suggest posting again.
         const reason = error instanceof AppError ? error.message : 'The response was not what was expected.'
@@ -214,7 +225,7 @@ export async function sendResult(
         return reply
             .code(502)
             .type('text/html')
-            .send(appPage(title, unverifiedContent(identity, reason)))
+            .send(appPage('Save not verified', unverifiedContent(identity, reason, active), active))
     }
 }
 
@@ -277,12 +288,14 @@ function formsContent(session: Session): string {
     const temperatureForm = formOrHint(
         session,
         'Observation',
+        'Record a temperature',
         `
-            <h2>Record a temperature</h2>
             <form method="post" action="/write/temperature">
                 <input type="hidden" name="csrf" value="${token}">
-                <label>Temperature in degrees Celsius
+                <label class="field">
+                    <span class="field-label">Temperature in degrees Celsius</span>
                     <input type="text" name="celsius" inputmode="decimal" maxlength="5" required>
+                    <span class="field-help">${MIN_CELSIUS} to ${MAX_CELSIUS} °C, at most two decimals. LOINC <code>8310-5</code></span>
                 </label>
                 <button type="submit">Record temperature</button>
             </form>
@@ -292,12 +305,14 @@ function formsContent(session: Session): string {
     const crpForm = formOrHint(
         session,
         'Observation',
+        'Record a CRP',
         `
-            <h2>Record a CRP</h2>
             <form method="post" action="/write/crp">
                 <input type="hidden" name="csrf" value="${token}">
-                <label>C-reactive protein in mg/L
+                <label class="field">
+                    <span class="field-label">C-reactive protein in mg/L</span>
                     <input type="text" name="crp" inputmode="decimal" maxlength="5" required>
+                    <span class="field-help">${MIN_CRP} to ${MAX_CRP} mg/L, at most one decimal. LOINC <code>1988-5</code></span>
                 </label>
                 <button type="submit">Record CRP</button>
             </form>
@@ -307,12 +322,14 @@ function formsContent(session: Session): string {
     const noteForm = formOrHint(
         session,
         'DocumentReference',
+        'Write a journal note',
         `
-            <h2>Write a journal note</h2>
             <form method="post" action="/write/note">
                 <input type="hidden" name="csrf" value="${token}">
-                <label>Note
+                <label class="field">
+                    <span class="field-label">Note</span>
                     <textarea name="note" rows="4" cols="60" maxlength="${MAX_NOTE_LENGTH}" required></textarea>
+                    <span class="field-help">Plain text, up to ${MAX_NOTE_LENGTH} characters. Appears in the journal editor.</span>
                 </label>
                 <button type="submit">Save note</button>
             </form>
@@ -320,30 +337,65 @@ function formsContent(session: Session): string {
     )
 
     return `
-        <p>All forms write to the patient and encounter of this launch.</p>
-        ${temperatureForm}
-        ${crpForm}
+        <div class="grid">
+            ${temperatureForm}
+            ${crpForm}
+        </div>
         ${noteForm}
+        ${notice(
+            'info',
+            'Each submit creates a new record',
+            '<p>The server assigns the ID, so submitting twice stores two records. Do not reload a result page, as that submits again.</p>',
+        )}
     `
 }
 
-function formOrHint(session: Session, kind: CreateKind, form: string): string {
+function formOrHint(session: Session, kind: CreateKind, title: string, form: string): string {
     const missing = missingScopes(session.tokens.scope, requiredScopes(kind))
 
-    return missing.length > 0 ? scopeHint(missing) : form
+    return card(title, missing.length > 0 ? scopeHint(missing) : form)
 }
 
-function savedContent(identity: string, readBack: ReadBack): string {
+const NEXT_STEPS: Record<string, string> = {
+    '/write': '<a class="button button--secondary" href="/write">Record another</a>',
+    '/lab': '<a class="button button--secondary" href="/lab">Record another lab result</a>',
+}
+
+function nextActions(active: Tab, offerAnother: boolean): string {
     return `
-        <p>Created <code>${escapeHtml(identity)}</code> (HTTP 201, Location matches).</p>
-        <h2>Read back from the FHIR server</h2>
-        <p>${escapeHtml(readBack.resourceType)}/${escapeHtml(readBack.id)}: ${escapeHtml(readBack.summary)}</p>
+        <div class="actions">
+            ${offerAnother ? (NEXT_STEPS[active] ?? '') : ''}
+            <a class="button button--secondary" href="/clinical">Open clinical summary</a>
+        </div>
     `
 }
 
-function unverifiedContent(identity: string, reason: string): string {
+function savedContent(identity: string, readBack: ReadBack, active: Tab): string {
     return `
-        <p>Created <code>${escapeHtml(identity)}</code>, but the read-back failed: ${escapeHtml(reason)}</p>
-        <p>Check the EPJ before submitting again, the resource may already exist.</p>
+        ${notice('success', 'Saved and verified', `<p>Created <code>${escapeHtml(identity)}</code> (HTTP 201, Location matches).</p>`)}
+        ${card(
+            'Read back from the FHIR server',
+            `
+                <dl class="kv">
+                    <dt>Resource</dt><dd><code>${escapeHtml(readBack.resourceType)}/${escapeHtml(readBack.id)}</code></dd>
+                    <dt>Stored</dt><dd>${escapeHtml(readBack.summary)}</dd>
+                </dl>
+            `,
+        )}
+        ${nextActions(active, true)}
+    `
+}
+
+function unverifiedContent(identity: string, reason: string, active: Tab): string {
+    return `
+        ${notice(
+            'warning',
+            'Saved, but not verified',
+            `
+                <p>Created <code>${escapeHtml(identity)}</code>, but the read-back failed: ${escapeHtml(reason)}</p>
+                <p>Check the EPJ before submitting again, the resource may already exist.</p>
+            `,
+        )}
+        ${nextActions(active, false)}
     `
 }

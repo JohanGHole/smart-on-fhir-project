@@ -2,8 +2,12 @@ import type { FastifyInstance } from 'fastify'
 
 import { AppError } from './config.ts'
 import { escapeHtml, page } from './http.ts'
+import { STYLESHEET } from './styles.ts'
+import { notice } from './ui.ts'
 
-const CONTENT_SECURITY_POLICY = "default-src 'none'; frame-ancestors 'none'; form-action 'self'; base-uri 'none'"
+// style-src 'self' admits only /assets/app.css: no inline styles, no scripts anywhere.
+const CONTENT_SECURITY_POLICY =
+    "default-src 'none'; style-src 'self'; frame-ancestors 'none'; form-action 'self'; base-uri 'none'"
 
 const UNEXPECTED_ERROR = {
     status: 502,
@@ -12,6 +16,8 @@ const UNEXPECTED_ERROR = {
 }
 
 export function configureServer(app: FastifyInstance): void {
+    app.get('/assets/app.css', async (_request, reply) => reply.type('text/css; charset=utf-8').send(STYLESHEET))
+
     app.addHook('onSend', async (_request, reply) => {
         reply.header('Cache-Control', 'no-store')
         reply.header('Referrer-Policy', 'same-origin')
@@ -28,7 +34,13 @@ export function configureServer(app: FastifyInstance): void {
         return reply
             .code(status)
             .type('text/html')
-            .send(page('SMART request failed', `<p>${escapeHtml(message)}</p>`))
+            .send(
+                page(
+                    'SMART request failed',
+                    `${notice('error', `HTTP ${status}`, `<p>${escapeHtml(message)}</p>`)}
+                    <p><a class="button button--secondary" href="/">Start page</a></p>`,
+                ),
+            )
     })
 }
 

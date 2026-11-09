@@ -11,6 +11,7 @@ import {
 import { escapeHtml } from './http.ts'
 import { appPage, scopeHint, type RouteDeps } from './routes.ts'
 import { missingScopes } from './scopes.ts'
+import { card, dateTime, notice, sparkline } from './ui.ts'
 
 type Measurement = ClinicalSummary['measurements'][number]
 
@@ -104,7 +105,7 @@ export function registerClinicalApp(app: FastifyInstance, { config, requireSessi
             return reply
                 .code(403)
                 .type('text/html')
-                .send(appPage('Clinical summary', scopeHint(missing)))
+                .send(appPage('Clinical summary', scopeHint(missing), '/clinical'))
         }
 
         const [summary, crp] = await Promise.all([
@@ -112,60 +113,98 @@ export function registerClinicalApp(app: FastifyInstance, { config, requireSessi
             clinicalSummary(config, session.tokens, session.context, C_REACTIVE_PROTEIN),
         ])
 
-        return reply.type('text/html').send(appPage('Clinical summary', summaryContent(summary, crp)))
+        return reply
+            .type('text/html')
+            .send(
+                appPage(
+                    'Clinical summary',
+                    summaryContent(summary, crp),
+                    '/clinical',
+                    "Diagnoses for this consultation and the patient's measurements, each with its code system and unit. A trend is only drawn from three or more readings in one unit.",
+                ),
+            )
     })
 }
 
 function summaryContent(summary: ClinicalSummary, crp: ClinicalSummary): string {
     return `
-        <h2>Diagnoses in this consultation</h2>
-        ${conditionsContent(summary.conditions)}
-        <h2>Body temperature</h2>
-        <p>Searched with LOINC <code>${escapeHtml(BODY_TEMPERATURE_LOINC)}</code> in <code>${escapeHtml(LOINC_SYSTEM)}</code>.</p>
-        ${measurementsContent(summary)}
-        <h2>C-reactive protein (CRP)</h2>
-        <p>Searched with LOINC <code>${escapeHtml(C_REACTIVE_PROTEIN)}</code> in <code>${escapeHtml(LOINC_SYSTEM)}</code>.</p>
-        ${measurementsContent(crp)}
+        ${card('Diagnoses in this consultation', conditionsContent(summary.conditions))}
+        ${seriesCard('Body temperature', BODY_TEMPERATURE_LOINC, summary)}
+        ${seriesCard('C-reactive protein (CRP)', C_REACTIVE_PROTEIN, crp)}
     `
+}
+
+function seriesCard(title: string, loinc: string, summary: ClinicalSummary): string {
+    const searched = `Searched with LOINC <code>${escapeHtml(loinc)}</code> in <code>${escapeHtml(LOINC_SYSTEM)}</code>.`
+
+    return card(title, measurementsContent(summary, title), searched)
 }
 
 function conditionsContent(conditions: ClinicalSummary['conditions']): string {
     if (conditions.length === 0) {
-        return '<p>No diagnoses recorded for this consultation.</p>'
+        return '<p class="muted">No diagnoses recorded for this consultation.</p>'
     }
 
-    const items = conditions.map(summarizeCondition).map((condition) => {
+    const rows = conditions.map(summarizeCondition).map((condition) => {
         const coding = condition.code
-            ? `code <code>${escapeHtml(condition.code)}</code> in <code>${escapeHtml(condition.system ?? 'unknown system')}</code>`
-            : 'no code recorded'
-        const details = [
-            condition.status && `status ${escapeHtml(condition.status)}`,
-            condition.since && `since ${escapeHtml(condition.since)}`,
-        ]
+            ? `<code>${escapeHtml(condition.code)}</code> in <code>${escapeHtml(condition.system ?? 'unknown system')}</code>`
+            : '<span class="muted">no code recorded</span>'
+        const status = condition.status
+            ? `<span class="tag tag--neutral">${escapeHtml(condition.status)}</span>`
+            : '<span class="muted">not recorded</span>'
+        const since = condition.since ? dateTime(condition.since) : '<span class="muted">not recorded</span>'
 
-        return `<li><strong>${escapeHtml(condition.label)}</strong>: ${[coding, ...details].filter(Boolean).join(', ')}</li>`
+        return `
+            <tr>
+                <td><strong>${escapeHtml(condition.label)}</strong></td>
+                <td>${coding}</td>
+                <td>${status}</td>
+                <td>${since}</td>
+            </tr>
+        `
     })
 
-    return `<ul>${items.join('')}</ul>`
+    return `
+        <div class="table-wrap">
+            <table>
+                <thead><tr><th>Diagnosis</th><th>Code</th><th>Status</th><th>Since</th></tr></thead>
+                <tbody>${rows.join('')}</tbody>
+            </table>
+        </div>
+    `
 }
 
-function measurementsContent(summary: ClinicalSummary): string {
+function measurementsContent(summary: ClinicalSummary, title: string): string {
     if (summary.measurements.length === 0) {
-        return '<p>No temperature readings recorded.</p>'
+        return '<p class="muted">No readings recorded.</p>'
     }
 
     const rows = summary.measurements.map(measurementRow).join('')
     const trend = describeTrend(summary)
 
     const trendContent = trend
-        ? `<p>Trend over ${summary.measurements.length} readings in ${escapeHtml(trend.unit)}: ${trend.direction}, from ${trend.first} to ${trend.last} (change ${trend.change}, range ${trend.min} to ${trend.max}).</p>`
-        : `<p>No trend: it needs at least three readings in the same unit, and there are ${summary.measurements.length}.</p>`
+        ? `
+            <div class="trend">
+                ${sparkline(
+                    summary.measurements.map((measurement) => measurement.valueQuantity.value),
+                    `${title}, ${summary.measurements.length} readings in ${trend.unit}, oldest to newest`,
+                )}
+                <p>Trend over ${summary.measurements.length} readings in ${escapeHtml(trend.unit)}: ${trend.direction}, from ${trend.first} to ${trend.last} (change ${trend.change}, range ${trend.min} to ${trend.max}).</p>
+            </div>
+        `
+        : notice(
+              'info',
+              'No trend',
+              `<p>No trend: it needs at least three readings in the same unit, and there are ${summary.measurements.length}.</p>`,
+          )
 
     return `
-        <table>
-            <thead><tr><th>Measured</th><th>Value</th><th>Unit</th></tr></thead>
-            <tbody>${rows}</tbody>
-        </table>
+        <div class="table-wrap">
+            <table>
+                <thead><tr><th>Measured</th><th class="num">Value</th><th>Unit</th></tr></thead>
+                <tbody>${rows}</tbody>
+            </table>
+        </div>
         ${trendContent}
     `
 }
@@ -175,8 +214,8 @@ function measurementRow(measurement: Measurement): string {
 
     return `
         <tr>
-            <td>${escapeHtml(measurement.effectiveDateTime)}</td>
-            <td>${escapeHtml(value)}</td>
+            <td>${dateTime(measurement.effectiveDateTime)}</td>
+            <td class="num value">${escapeHtml(value)}</td>
             <td>${escapeHtml(unit)} (<code>${escapeHtml(code)}</code> in <code>${escapeHtml(system)}</code>)</td>
         </tr>
     `

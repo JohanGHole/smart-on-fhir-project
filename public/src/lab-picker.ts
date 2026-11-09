@@ -6,6 +6,7 @@ import { createResource, LAB_TESTS, labObservation, labTest, LOINC_SYSTEM, type 
 import { escapeHtml } from './http.ts'
 import { appPage, scopeHint, type RouteDeps } from './routes.ts'
 import { missingScopes } from './scopes.ts'
+import { card, notice } from './ui.ts'
 import { authorizePost, parseForm, requiredScopes, sendResult } from './write-back.ts'
 
 // A lab result picker in the spirit of the DHIS2 lab-result reference implementation: a fixed catalogue of
@@ -45,13 +46,17 @@ export function registerLabPicker(app: FastifyInstance, deps: RouteDeps): void {
             return reply
                 .code(403)
                 .type('text/html')
-                .send(appPage('Lab results', scopeHint(missing)))
+                .send(appPage('Lab results', scopeHint(missing), '/lab'))
         }
 
         const test = query.data.test === undefined ? undefined : labTest(query.data.test)
         const content = test ? testForm(test, session.csrfToken) : catalogue()
 
-        return reply.type('text/html').send(appPage('Lab results', content))
+        const lead = test
+            ? "Pick a prefilled value or enter your own. It is written as an Observation for this launch's patient and consultation."
+            : 'Pick a test. Results are written as LOINC-coded Observations for the patient and consultation of this launch.'
+
+        return reply.type('text/html').send(appPage('Lab results', content, '/lab', lead))
     })
 
     app.post('/lab/result', async (request, reply) => {
@@ -68,7 +73,7 @@ export function registerLabPicker(app: FastifyInstance, deps: RouteDeps): void {
         // Patient and encounter come from the session, never from the form.
         const created = await createResource(deps.config, session.tokens, labObservation(session.context, test, value))
 
-        return sendResult(reply, deps.config, session, created)
+        return sendResult(reply, deps.config, session, created, '/lab')
     })
 }
 
@@ -100,47 +105,71 @@ export function parseValue(test: LabTest, fields: { preset?: string | undefined;
     return value
 }
 
-function catalogue(): string {
-    const items = LAB_TESTS.map(
-        (test) => `
-            <li>
-                <a href="/lab?test=${encodeURIComponent(test.key)}">${escapeHtml(test.display)}</a>
-                (LOINC <code>${escapeHtml(test.loinc)}</code>, ${escapeHtml(test.unit.display)})
-            </li>
-        `,
-    )
+function decimalsText(decimals: number): string {
+    return decimals === 0 ? 'whole numbers only' : `at most ${decimals} decimal${decimals === 1 ? '' : 's'}`
+}
 
-    return `
-        <p>Pick a test. The result is written as a laboratory Observation for the patient and encounter of this launch.</p>
-        <ul>${items.join('')}</ul>
-    `
+function catalogue(): string {
+    const groups = [...new Set(LAB_TESTS.map((test) => test.group))]
+
+    return groups
+        .map((group) => {
+            const items = LAB_TESTS.filter((test) => test.group === group).map(
+                (test) => `
+                    <li>
+                        <a href="/lab?test=${encodeURIComponent(test.key)}">
+                            <span class="catalogue-name">${escapeHtml(test.display)}</span>
+                            <span class="catalogue-meta">LOINC <code>${escapeHtml(test.loinc)}</code> <span class="tag">${escapeHtml(test.unit.display)}</span></span>
+                        </a>
+                    </li>
+                `,
+            )
+
+            return `
+                <section class="catalogue-group">
+                    <h2 class="section-title">${escapeHtml(group)}</h2>
+                    <ul class="catalogue">${items.join('')}</ul>
+                </section>
+            `
+        })
+        .join('')
 }
 
 function testForm(test: LabTest, csrfToken: string): string {
     const presets = test.presets.map(
         (preset) => `
-            <label>
+            <label class="choice">
                 <input type="radio" name="preset" value="${escapeHtml(String(preset.value))}">
-                ${escapeHtml(preset.label)}: ${escapeHtml(String(preset.value))} ${escapeHtml(test.unit.display)}
-            </label><br>
+                <span class="choice-label">${escapeHtml(preset.label)}</span>
+                <span class="choice-value">${escapeHtml(String(preset.value))} ${escapeHtml(test.unit.display)}</span>
+            </label>
         `,
     )
 
+    const subtitle = `LOINC <code>${escapeHtml(test.loinc)}</code> in <code>${escapeHtml(LOINC_SYSTEM)}</code>, unit <code>${escapeHtml(test.unit.code)}</code>.`
+
     return `
-        <p><a href="/lab">All tests</a></p>
-        <h2>${escapeHtml(test.display)}</h2>
-        <p>LOINC <code>${escapeHtml(test.loinc)}</code> in <code>${escapeHtml(LOINC_SYSTEM)}</code>, unit <code>${escapeHtml(test.unit.code)}</code>.</p>
-        <form method="post" action="/lab/result">
-            <input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}">
-            <input type="hidden" name="test" value="${escapeHtml(test.key)}">
-            <fieldset>
-                <legend>Prefilled values</legend>
-                ${presets.join('')}
-            </fieldset>
-            <label>Or enter a value in ${escapeHtml(test.unit.display)} (${escapeHtml(String(test.min))} to ${escapeHtml(String(test.max))})
-                <input type="text" name="value" inputmode="decimal" maxlength="7">
-            </label>
-            <button type="submit">Record result</button>
-        </form>
+        <p class="breadcrumb"><a href="/lab">← All lab tests</a></p>
+        ${card(
+            test.display,
+            `
+                <form method="post" action="/lab/result">
+                    <input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}">
+                    <input type="hidden" name="test" value="${escapeHtml(test.key)}">
+                    <fieldset>
+                        <legend>Prefilled values</legend>
+                        <div class="choices">${presets.join('')}</div>
+                    </fieldset>
+                    <label class="field">
+                        <span class="field-label">Or enter a value in ${escapeHtml(test.unit.display)}</span>
+                        <input type="text" name="value" inputmode="decimal" maxlength="7">
+                        <span class="field-help">${escapeHtml(String(test.min))} to ${escapeHtml(String(test.max))} ${escapeHtml(test.unit.display)}, ${decimalsText(test.decimals)}. A typed value overrides the prefilled one.</span>
+                    </label>
+                    <button type="submit">Record result</button>
+                </form>
+            `,
+            subtitle,
+        )}
+        ${notice('info', 'Demo values', '<p>The prefilled values are typical numbers for a demo, not reference ranges.</p>')}
     `
 }

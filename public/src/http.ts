@@ -203,7 +203,16 @@ export function escapeHtml(value: unknown): string {
     return String(value).replace(/[&<>"']/g, (char) => HTML_ESCAPES[char as keyof typeof HTML_ESCAPES])
 }
 
-export function page(title: string, content: string): string {
+// A small mark for the header bar: a stethoscope-like circle and pulse line, drawn with presentation attributes.
+const LOGO = `
+    <svg viewBox="0 0 28 28" width="28" height="28" aria-hidden="true">
+        <rect width="28" height="28" rx="6" fill="#147cd7" />
+        <path d="M5 15h4l2-5 3 9 2.5-6 1.5 2H23" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+    </svg>
+`
+
+// `nav` is the tab bar from routes.ts (empty outside a launch); `lead` is an optional line under the title.
+export function page(title: string, content: string, nav = '', lead = ''): string {
     const heading = escapeHtml(title)
 
     return `
@@ -211,13 +220,21 @@ export function page(title: string, content: string): string {
         <html lang="en">
             <head>
                 <meta charset="utf-8">
-                <meta name="viewport" content="width=device-width">
-                <title>${heading}</title>
+                <meta name="viewport" content="width=device-width, initial-scale=1">
+                <title>${heading} · SMART on FHIR</title>
+                <link rel="stylesheet" href="/assets/app.css">
             </head>
             <body>
-                <main>
-                    <h1>${heading}</h1>
-                    ${content}
+                <header class="headerbar">
+                    <span class="headerbar-logo">${LOGO}</span>
+                    <span class="headerbar-title">SMART on FHIR · Hackathon starter</span>
+                    <span class="headerbar-context">nav-epj</span>
+                </header>
+                ${nav}
+                <main class="container">
+                    <h1 class="page-title">${heading}</h1>
+                    ${lead ? `<p class="page-lead">${lead}</p>` : '<div class="page-lead"></div>'}
+                    <div class="stack">${content}</div>
                 </main>
             </body>
         </html>

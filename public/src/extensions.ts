@@ -125,8 +125,11 @@ export function temperature(context: Context, celsius: number, effective = new D
 // `category`: nav-epj's write contract accepts only the temperature-style shape and rejects category, component,
 // note, interpretation, referenceRange, identifier and extensions with a 400 (EXERCISES.md, Write-back shapes).
 // Presets are typical values for a demo, not clinical advice.
+export type LabGroup = 'Laboratory' | 'Vital signs'
+
 export interface LabTest {
     key: string
+    group: LabGroup
     loinc: string
     display: string
     unit: { code: string; display: string }
@@ -139,6 +142,7 @@ export interface LabTest {
 export const LAB_TESTS: readonly LabTest[] = [
     {
         key: 'crp',
+        group: 'Laboratory',
         loinc: C_REACTIVE_PROTEIN,
         display: 'C reactive protein [Mass/volume] in Serum or Plasma',
         unit: { code: 'mg/L', display: 'mg/L' },
@@ -154,6 +158,7 @@ export const LAB_TESTS: readonly LabTest[] = [
     },
     {
         key: 'hemoglobin',
+        group: 'Laboratory',
         loinc: '718-7',
         display: 'Hemoglobin [Mass/volume] in Blood',
         unit: { code: 'g/dL', display: 'g/dL' },
@@ -168,6 +173,7 @@ export const LAB_TESTS: readonly LabTest[] = [
     },
     {
         key: 'glucose',
+        group: 'Laboratory',
         loinc: '15074-8',
         display: 'Glucose [Moles/volume] in Blood',
         unit: { code: 'mmol/L', display: 'mmol/L' },
@@ -183,6 +189,7 @@ export const LAB_TESTS: readonly LabTest[] = [
     },
     {
         key: 'creatinine',
+        group: 'Laboratory',
         loinc: '14682-9',
         display: 'Creatinine [Moles/volume] in Serum or Plasma',
         unit: { code: 'umol/L', display: 'µmol/L' },
@@ -197,6 +204,7 @@ export const LAB_TESTS: readonly LabTest[] = [
     },
     {
         key: 'leukocytes',
+        group: 'Laboratory',
         loinc: '6690-2',
         display: 'Leukocytes [#/volume] in Blood by Automated count',
         unit: { code: '10*9/L', display: '10⁹/L' },
@@ -207,6 +215,142 @@ export const LAB_TESTS: readonly LabTest[] = [
             { label: 'Low', value: 2.5 },
             { label: 'Normal', value: 7 },
             { label: 'Raised', value: 14 },
+        ],
+    },
+    {
+        key: 'hba1c',
+        group: 'Laboratory',
+        loinc: '4548-4',
+        display: 'Hemoglobin A1c/Hemoglobin.total in Blood',
+        unit: { code: '%', display: '%' },
+        min: 3,
+        max: 20,
+        decimals: 1,
+        presets: [
+            { label: 'Normal', value: 5.4 },
+            { label: 'Prediabetes', value: 6.1 },
+            { label: 'Diabetes', value: 7.2 },
+            { label: 'Poorly controlled', value: 9.5 },
+        ],
+    },
+    {
+        key: 'potassium',
+        group: 'Laboratory',
+        loinc: '2823-3',
+        display: 'Potassium [Moles/volume] in Serum or Plasma',
+        unit: { code: 'mmol/L', display: 'mmol/L' },
+        min: 1,
+        max: 10,
+        decimals: 1,
+        presets: [
+            { label: 'Low', value: 3.1 },
+            { label: 'Normal', value: 4.2 },
+            { label: 'High', value: 5.8 },
+        ],
+    },
+    {
+        key: 'sodium',
+        group: 'Laboratory',
+        loinc: '2951-2',
+        display: 'Sodium [Moles/volume] in Serum or Plasma',
+        unit: { code: 'mmol/L', display: 'mmol/L' },
+        min: 100,
+        max: 180,
+        decimals: 0,
+        presets: [
+            { label: 'Low', value: 128 },
+            { label: 'Normal', value: 140 },
+            { label: 'High', value: 150 },
+        ],
+    },
+    {
+        key: 'alt',
+        group: 'Laboratory',
+        loinc: '1742-6',
+        display: 'Alanine aminotransferase [Enzymatic activity/volume] in Serum or Plasma',
+        unit: { code: 'U/L', display: 'U/L' },
+        min: 1,
+        max: 5000,
+        decimals: 0,
+        presets: [
+            { label: 'Normal', value: 25 },
+            { label: 'Raised', value: 90 },
+            { label: 'High', value: 300 },
+        ],
+    },
+    {
+        key: 'cholesterol',
+        group: 'Laboratory',
+        loinc: '14647-2',
+        display: 'Cholesterol [Moles/volume] in Serum or Plasma',
+        unit: { code: 'mmol/L', display: 'mmol/L' },
+        min: 1,
+        max: 20,
+        decimals: 1,
+        presets: [
+            { label: 'Desirable', value: 4.6 },
+            { label: 'Borderline', value: 5.8 },
+            { label: 'High', value: 7.2 },
+        ],
+    },
+    {
+        key: 'tsh',
+        group: 'Laboratory',
+        loinc: '3016-3',
+        display: 'Thyrotropin [Units/volume] in Serum or Plasma',
+        unit: { code: 'm[IU]/L', display: 'mIU/L' },
+        min: 0,
+        max: 100,
+        decimals: 2,
+        presets: [
+            { label: 'Low', value: 0.05 },
+            { label: 'Normal', value: 1.8 },
+            { label: 'High', value: 8.5 },
+        ],
+    },
+    {
+        key: 'platelets',
+        group: 'Laboratory',
+        loinc: '777-3',
+        display: 'Platelets [#/volume] in Blood by Automated count',
+        unit: { code: '10*9/L', display: '10⁹/L' },
+        min: 1,
+        max: 2000,
+        decimals: 0,
+        presets: [
+            { label: 'Low', value: 90 },
+            { label: 'Normal', value: 250 },
+            { label: 'High', value: 520 },
+        ],
+    },
+    {
+        key: 'systolic',
+        group: 'Vital signs',
+        loinc: '8480-6',
+        display: 'Systolic blood pressure',
+        unit: { code: 'mm[Hg]', display: 'mmHg' },
+        min: 50,
+        max: 260,
+        decimals: 0,
+        presets: [
+            { label: 'Normal', value: 118 },
+            { label: 'Elevated', value: 135 },
+            { label: 'High', value: 165 },
+        ],
+    },
+    {
+        key: 'diastolic',
+        group: 'Vital signs',
+        loinc: '8462-4',
+        display: 'Diastolic blood pressure',
+        unit: { code: 'mm[Hg]', display: 'mmHg' },
+        min: 30,
+        max: 160,
+        decimals: 0,
+        presets: [
+            { label: 'Normal', value: 76 },
+            { label: 'Elevated', value: 88 },
+            { label: 'High', value: 102 },
         ],
     },
 ]

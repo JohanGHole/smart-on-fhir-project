@@ -32,7 +32,7 @@ const MeasurementInputSchema = z
                         z
                             .object({
                                 system: z.literal(LOINC_SYSTEM),
-                                code: z.enum(['8310-5', '1988-5', '718-7', '15074-8', '14682-9', '6690-2']),
+                                code: z.string().regex(/^\d{1,7}-\d$/),
                                 display: z.string().min(1),
                             })
                             .strict(),
@@ -48,7 +48,7 @@ const MeasurementInputSchema = z
                 value: z.number().finite(),
                 unit: z.string().min(1),
                 system: z.literal(UCUM_SYSTEM),
-                code: z.enum(['Cel', 'mg/L', 'g/dL', 'mmol/L', 'umol/L', '10*9/L']),
+                code: z.string().min(1),
             })
             .strict(),
     })

@@ -7,6 +7,7 @@ import { escapeHtml, fhirUrl, REQUEST_TIMEOUT_MS, searchPath } from './http.ts'
 import { appPage, type RouteDeps } from './routes.ts'
 import { grantsInteraction } from './scopes.ts'
 import type { Context, Session } from './types.ts'
+import { card, chips, notice } from './ui.ts'
 
 const MINIMAL_SCOPES = 'openid fhirUser launch patient/Patient.r patient/Encounter.s'
 const MAX_ISSUES = 10
@@ -89,7 +90,16 @@ export function registerScopeDetective(app: FastifyInstance, { config, requireSe
             ${refused ? '' : noRefusedReadContent()}
         `
 
-        return reply.type('text/html').send(appPage('Scope detective', content))
+        return reply
+            .type('text/html')
+            .send(
+                appPage(
+                    'Scope detective',
+                    content,
+                    '/scopes',
+                    'Compare the scopes this app asked for with the scopes the server granted, then watch the FHIR server enforce them.',
+                ),
+            )
     })
 }
 
@@ -126,13 +136,18 @@ function scopeComparison(requested: string, granted: string): string {
     const notGranted = requestedScopes.filter((scope) => !grantedScopes.includes(scope))
     const notRequested = grantedScopes.filter((scope) => !requestedScopes.includes(scope))
 
-    return `
-        <h2>Requested and granted</h2>
-        <p>Requested: ${escapeHtml(requested)}</p>
-        <p>Granted: ${escapeHtml(granted)}</p>
-        <p>Requested but not granted: ${scopeList(notGranted)}</p>
-        <p>Granted but not requested: ${scopeList(notRequested)}</p>
+    const body = `
+        <dl class="kv">
+            <dt>Requested</dt><dd>${chips(requestedScopes, notGranted)}</dd>
+            <dt>Granted</dt><dd>${chips(grantedScopes, notRequested)}</dd>
+        </dl>
+        <div class="diff">
+            <p>Requested but not granted: ${scopeList(notGranted)}</p>
+            <p>Granted but not requested: ${scopeList(notRequested)}</p>
+        </div>
     `
+
+    return card('Requested and granted', body, 'Highlighted scopes differ between the request and the token response.')
 }
 
 function scopeList(scopes: string[]): string {
@@ -142,13 +157,20 @@ function scopeList(scopes: string[]): string {
 function probeContent(granted: string, results: { candidate: Probe; result: ProbeResult }[]): string {
     const rows = results.map(({ candidate, result }) => probeRow(granted, candidate, result))
 
-    return `
-        <h2>Two reads</h2>
-        <table>
-            <thead><tr><th>Request</th><th>Granted scopes say</th><th>Server answered</th><th>Outcome</th></tr></thead>
-            <tbody>${rows.join('')}</tbody>
-        </table>
+    const table = `
+        <div class="table-wrap">
+            <table>
+                <thead><tr><th>Request</th><th>Granted scopes say</th><th>Server answered</th><th>Outcome</th></tr></thead>
+                <tbody>${rows.join('')}</tbody>
+            </table>
+        </div>
     `
+
+    return card(
+        results.length > 1 ? 'Two reads' : 'One read',
+        table,
+        'Only the HTTP status and the OperationOutcome severity and code are shown, never the upstream body.',
+    )
 }
 
 function probeRow(granted: string, probeRequest: Probe, result: ProbeResult): string {
@@ -160,19 +182,21 @@ function probeRow(granted: string, probeRequest: Probe, result: ProbeResult): st
     const matches = predictedAllowed === isSuccess
 
     return `
-        <tr>
+        <tr class="row--${isSuccess ? 'allowed' : 'refused'}">
             <td><code>GET ${escapeHtml(result.request)}</code></td>
             <td>${predictedAllowed ? 'allowed' : 'refused'}</td>
             <td>${answer}</td>
-            <td>${matches ? 'as the scopes predict' : 'differs from the scopes: check wildcard scopes and server rules'}</td>
+            <td>${matches ? '<span class="tag tag--positive">as the scopes predict</span>' : '<span class="tag tag--negative">differs from the scopes: check wildcard scopes and server rules</span>'}</td>
         </tr>
     `
 }
 
 function noRefusedReadContent(): string {
-    return `
-        <p>The granted scopes allow both Condition and Observation, so there is no refused read to show here.
+    return notice(
+        'info',
+        'Nothing is refused',
+        `<p>The granted scopes allow both Condition and Observation, so there is no refused read to show here.
         To see one, set <code>SCOPES=${escapeHtml(MINIMAL_SCOPES)}</code> in <code>.env</code>, restart the app
-        and launch again from the EPJ.</p>
-    `
+        and launch again from the EPJ.</p>`,
+    )
 }
