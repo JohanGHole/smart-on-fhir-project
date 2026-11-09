@@ -24,6 +24,7 @@ All of these are `patient/` scopes, so you can request them without asking the h
 | Silver clinical app | `/clinical` | default plus `patient/Condition.s patient/Observation.s` |
 | Silver scope detective | `/scopes` | default only, see below |
 | Gold write-back | `/write` | default plus `patient/Observation.cr patient/DocumentReference.cr` |
+| Lab result picker | `/lab` | default plus `patient/Observation.cr` |
 
 To try everything at once:
 
@@ -118,6 +119,14 @@ node --import tsx --test test/write-forms.test.ts
 ```
 
 **Manual:** the real EPJ. Measurements should show in the Målinger tab and the note in the journal editor.
+
+### Lab result picker (`/lab`)
+
+[src/lab-picker.ts](./src/lab-picker.ts) is a picker in the spirit of the [DHIS2 lab-result reference implementation](https://github.com/dhis2/reference-dhis2-tracker-lab-result-integration): a fixed catalogue of LOINC-coded lab tests (`LAB_TESTS` in [src/extensions.ts](./src/extensions.ts)) with prefilled typical values. `GET /lab` lists the tests, `GET /lab?test=<key>` shows one test's presets and a free value field, and `POST /lab/result` writes the result as an Observation with the test's LOINC code and its UCUM unit. A typed value overrides a ticked preset; both are validated against the test's range and decimals. The POST goes through the same checks as the write-back forms (session, Origin, CSRF, input, scopes) and the same create and read-back.
+
+Unlike the reference, which exchanges coded results (LOINC answers such as `LA6576-8` Positive) with `category` `laboratory`, the picker writes plain quantities in the temperature shape: nav-epj's write contract accepts exactly one LOINC coding plus a UCUM `valueQuantity` and rejects `category`, `component`, `note`, `interpretation`, `referenceRange`, `identifier` and extensions with a 400 (see Write-back shapes in the upstream EXERCISES.md).
+
+**Automated:** [test/lab-picker.test.ts](./test/lab-picker.test.ts). **Manual:** the real EPJ.
 
 ### Asymmetric authentication and Backend Services
 

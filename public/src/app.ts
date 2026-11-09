@@ -4,6 +4,7 @@ import Fastify, { LogController, type FastifyInstance, type FastifyRequest } fro
 import { registerClinicalApp } from './clinical-app.ts'
 import { AppError, type Config } from './config.ts'
 import { escapeHtml, page, randomToken } from './http.ts'
+import { registerLabPicker } from './lab-picker.ts'
 import * as reference from './reference.ts'
 import { appPage } from './routes.ts'
 import { registerScopeDetective } from './scope-detective.ts'
@@ -146,6 +147,8 @@ export async function buildApp(
     registerClinicalApp(app, routeDeps)
     registerScopeDetective(app, routeDeps)
     registerWriteBack(app, routeDeps)
+    // After registerWriteBack: the form body parser is registered there.
+    registerLabPicker(app, routeDeps)
 
     return app
 }

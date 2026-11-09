@@ -2,7 +2,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { z } from 'zod'
 
 import { AppError, type Config } from './config.ts'
-import { createResource, journalNote, temperature } from './extensions.ts'
+import { createResource, cReactiveProtein, journalNote, temperature } from './extensions.ts'
 import { escapeHtml, fhir, IdSchema, isSameSecret, ReferenceSchema, referenceId } from './http.ts'
 import { appPage, scopeHint, type RouteDeps } from './routes.ts'
 import { missingScopes } from './scopes.ts'
@@ -12,6 +12,8 @@ const FORM_CONTENT_TYPE = 'application/x-www-form-urlencoded'
 
 const MIN_CELSIUS = 25
 const MAX_CELSIUS = 45
+const MIN_CRP = 0
+const MAX_CRP = 500
 const MAX_NOTE_LENGTH = 2000
 
 // A note of 2000 characters can be six times as long once percent-encoded, plus the field names.
@@ -29,10 +31,22 @@ const CelsiusSchema = z
         `Temperature must be between ${MIN_CELSIUS} and ${MAX_CELSIUS} degrees Celsius.`,
     )
 
+const CrpSchema = z
+    .string()
+    .trim()
+    .regex(/^\d{1,3}(?:[.,]\d)?$/, 'CRP must be a number in mg/L with at most one decimal.')
+    .transform((text) => Number(text.replace(',', '.')))
+    .refine((value) => value >= MIN_CRP && value <= MAX_CRP, `CRP must be between ${MIN_CRP} and ${MAX_CRP} mg/L.`)
+
 // strictObject rejects unknown fields, so a forged patient or encounter field fails instead of being ignored.
 const TemperatureFormSchema = z.strictObject({
     csrf: z.string(),
     celsius: CelsiusSchema,
+})
+
+const CrpFormSchema = z.strictObject({
+    csrf: z.string(),
+    crp: CrpSchema,
 })
 
 const NoteFormSchema = z.strictObject({
@@ -66,7 +80,7 @@ interface ReadBack {
     summary: string
 }
 
-type CreateKind = 'Observation' | 'DocumentReference'
+export type CreateKind = 'Observation' | 'DocumentReference'
 
 export function registerWriteBack(app: FastifyInstance, deps: RouteDeps): void {
     // The only URL-encoded bodies this app accepts are its own two forms, so a small parser is enough.
@@ -106,6 +120,15 @@ export function registerWriteBack(app: FastifyInstance, deps: RouteDeps): void {
         return sendResult(reply, deps.config, session, created)
     })
 
+    app.post('/write/crp', async (request, reply) => {
+        const session = authorizePost(request, deps, 'Observation')
+        const { crp } = parseForm(CrpFormSchema, request.body)
+
+        const created = await createResource(deps.config, session.tokens, cReactiveProtein(session.context, crp))
+
+        return sendResult(reply, deps.config, session, created)
+    })
+
     app.post('/write/note', async (request, reply) => {
         const session = authorizePost(request, deps, 'DocumentReference')
         const { note } = parseForm(NoteFormSchema, request.body)
@@ -118,7 +141,7 @@ export function registerWriteBack(app: FastifyInstance, deps: RouteDeps): void {
 
 // Order matters: who is asking (session), where the request came from (Origin), proof that our own page
 // produced it (CSRF token), and only then whether the data is valid and the scopes are enough.
-function authorizePost(request: FastifyRequest, deps: RouteDeps, kind: CreateKind): Session {
+export function authorizePost(request: FastifyRequest, deps: RouteDeps, kind: CreateKind): Session {
     const session = deps.requireSession(request)
 
     // The trusted origin is fixed by configuration. Trusting the Host header would let a request
@@ -150,7 +173,7 @@ function authorizePost(request: FastifyRequest, deps: RouteDeps, kind: CreateKin
     return session
 }
 
-function parseForm<T>(schema: z.ZodType<T>, body: unknown): T {
+export function parseForm<T>(schema: z.ZodType<T>, body: unknown): T {
     const result = schema.safeParse(body)
 
     if (!result.success) {
@@ -161,14 +184,14 @@ function parseForm<T>(schema: z.ZodType<T>, body: unknown): T {
 }
 
 // Reading back needs .r on top of .c: a write nobody can verify is not reported as a success.
-function requiredScopes(kind: CreateKind): { resourceType: string; interaction: 'c' | 'r' }[] {
+export function requiredScopes(kind: CreateKind): { resourceType: string; interaction: 'c' | 'r' }[] {
     return [
         { resourceType: kind, interaction: 'c' },
         { resourceType: kind, interaction: 'r' },
     ]
 }
 
-async function sendResult(
+export async function sendResult(
     reply: FastifyReply,
     config: Config,
     session: Session,
@@ -266,6 +289,21 @@ function formsContent(session: Session): string {
         `,
     )
 
+    const crpForm = formOrHint(
+        session,
+        'Observation',
+        `
+            <h2>Record a CRP</h2>
+            <form method="post" action="/write/crp">
+                <input type="hidden" name="csrf" value="${token}">
+                <label>C-reactive protein in mg/L
+                    <input type="text" name="crp" inputmode="decimal" maxlength="5" required>
+                </label>
+                <button type="submit">Record CRP</button>
+            </form>
+        `,
+    )
+
     const noteForm = formOrHint(
         session,
         'DocumentReference',
@@ -282,8 +320,9 @@ function formsContent(session: Session): string {
     )
 
     return `
-        <p>Both forms write to the patient and encounter of this launch.</p>
+        <p>All forms write to the patient and encounter of this launch.</p>
         ${temperatureForm}
+        ${crpForm}
         ${noteForm}
     `
 }

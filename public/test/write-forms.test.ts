@@ -74,6 +74,7 @@ test('GET /write renders forms with a session token and writes nothing', async (
 
     assert.equal(page.statusCode, 200)
     assert.match(page.body, /action="\/write\/temperature"/)
+    assert.match(page.body, /action="\/write\/crp"/)
     assert.match(page.body, /action="\/write\/note"/)
     assert.equal(w.f.created.size, 0)
     assert.equal(postedResources(w.f), 0)
@@ -112,6 +113,27 @@ test('temperature: writes for the session patient and encounter, then shows the 
     assert.equal(stored.valueQuantity.value, 37.4)
     assert.equal(postedResources(w.f), 1)
     assert.ok(w.f.requests.some((r) => r.method === 'GET' && r.path === '/fhir/Observation/created-1'))
+})
+
+test('CRP: writes for the session patient and encounter, then shows the read-back', async (t) => {
+    const w = await startWriteApp(t)
+    const response = await post(w, '/write/crp', form({ csrf: w.csrf, crp: '12,5' }))
+
+    assert.equal(response.statusCode, 200, response.body)
+    assert.match(response.body, /Observation\/created-1/)
+    assert.match(response.body, /12\.5 mg\/L/)
+    assert.match(response.body, /Patient\/p1/)
+    assert.match(response.body, /Encounter\/e1/)
+
+    const stored = w.f.created.get('Observation/created-1') as {
+        code: { coding: { code: string }[] }
+        valueQuantity: { value: number; code: string }
+    }
+
+    assert.equal(stored.code.coding[0]?.code, '1988-5')
+    assert.equal(stored.valueQuantity.value, 12.5)
+    assert.equal(stored.valueQuantity.code, 'mg/L')
+    assert.equal(postedResources(w.f), 1)
 })
 
 test('note: writes a DocumentReference and escapes the text it echoes', async (t) => {
@@ -196,6 +218,12 @@ test('invalid input is rejected without writing', async (t) => {
         ['/write/temperature', { celsius: '45.1' }],
         ['/write/temperature', { celsius: '37.123' }],
         ['/write/temperature', {}],
+        ['/write/crp', { crp: '-1' }],
+        ['/write/crp', { crp: '500.1' }],
+        ['/write/crp', { crp: '12.55' }],
+        ['/write/crp', { crp: 'abc' }],
+        ['/write/crp', { crp: '' }],
+        ['/write/crp', {}],
         ['/write/note', { note: '' }],
         ['/write/note', { note: '   \n ' }],
         ['/write/note', { note: 'x'.repeat(2001) }],

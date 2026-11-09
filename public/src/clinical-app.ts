@@ -1,7 +1,13 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 
-import { BODY_TEMPERATURE_LOINC, clinicalSummary, LOINC_SYSTEM, type ClinicalSummary } from './extensions.ts'
+import {
+    BODY_TEMPERATURE_LOINC,
+    C_REACTIVE_PROTEIN,
+    clinicalSummary,
+    LOINC_SYSTEM,
+    type ClinicalSummary,
+} from './extensions.ts'
 import { escapeHtml } from './http.ts'
 import { appPage, scopeHint, type RouteDeps } from './routes.ts'
 import { missingScopes } from './scopes.ts'
@@ -101,19 +107,25 @@ export function registerClinicalApp(app: FastifyInstance, { config, requireSessi
                 .send(appPage('Clinical summary', scopeHint(missing)))
         }
 
-        const summary = await clinicalSummary(config, session.tokens, session.context)
+        const [summary, crp] = await Promise.all([
+            clinicalSummary(config, session.tokens, session.context),
+            clinicalSummary(config, session.tokens, session.context, C_REACTIVE_PROTEIN),
+        ])
 
-        return reply.type('text/html').send(appPage('Clinical summary', summaryContent(summary)))
+        return reply.type('text/html').send(appPage('Clinical summary', summaryContent(summary, crp)))
     })
 }
 
-function summaryContent(summary: ClinicalSummary): string {
+function summaryContent(summary: ClinicalSummary, crp: ClinicalSummary): string {
     return `
         <h2>Diagnoses in this consultation</h2>
         ${conditionsContent(summary.conditions)}
         <h2>Body temperature</h2>
         <p>Searched with LOINC <code>${escapeHtml(BODY_TEMPERATURE_LOINC)}</code> in <code>${escapeHtml(LOINC_SYSTEM)}</code>.</p>
         ${measurementsContent(summary)}
+        <h2>C-reactive protein (CRP)</h2>
+        <p>Searched with LOINC <code>${escapeHtml(C_REACTIVE_PROTEIN)}</code> in <code>${escapeHtml(LOINC_SYSTEM)}</code>.</p>
+        ${measurementsContent(crp)}
     `
 }
 

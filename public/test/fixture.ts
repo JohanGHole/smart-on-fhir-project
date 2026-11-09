@@ -32,7 +32,7 @@ const MeasurementInputSchema = z
                         z
                             .object({
                                 system: z.literal(LOINC_SYSTEM),
-                                code: z.literal('8310-5'),
+                                code: z.enum(['8310-5', '1988-5', '718-7', '15074-8', '14682-9', '6690-2']),
                                 display: z.string().min(1),
                             })
                             .strict(),
@@ -48,7 +48,7 @@ const MeasurementInputSchema = z
                 value: z.number().finite(),
                 unit: z.string().min(1),
                 system: z.literal(UCUM_SYSTEM),
-                code: z.literal('Cel'),
+                code: z.enum(['Cel', 'mg/L', 'g/dL', 'mmol/L', 'umol/L', '10*9/L']),
             })
             .strict(),
     })
@@ -435,7 +435,7 @@ export async function fixture(clientAlg: 'ES384' | 'RS384' = 'ES384', modulusLen
         server.get('/fhir/Observation', async (request, reply) => {
             const params = searchParamsOf(request.url)
             const code = params.get('code')?.replace(/^http:\/\/loinc.org\|/, '')
-            const isSupportedCode = ['8310-5', '8867-4'].includes(code ?? '')
+            const isSupportedCode = ['8310-5', '8867-4', '1988-5'].includes(code ?? '')
 
             if (
                 !usesOnlyParams(params, ['patient', 'subject', 'code']) ||

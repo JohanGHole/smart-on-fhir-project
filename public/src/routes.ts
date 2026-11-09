@@ -16,6 +16,7 @@ export function navigation(): string {
             <a href="/clinical">Clinical summary</a>
             <a href="/scopes">Scope detective</a>
             <a href="/write">Write back</a>
+            <a href="/lab">Lab results</a>
         </nav>
     `
 }

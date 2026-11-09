@@ -8,6 +8,7 @@ export const LOINC_SYSTEM = 'http://loinc.org'
 const UCUM_SYSTEM = 'http://unitsofmeasure.org'
 
 export const BODY_TEMPERATURE_LOINC = '8310-5'
+export const C_REACTIVE_PROTEIN = '1988-5'
 const MIN_TREND_READINGS = 3
 
 const UNCERTAIN_CREATE_MESSAGE =
@@ -116,6 +117,135 @@ export function temperature(context: Context, celsius: number, effective = new D
         encounter: resourceReference('Encounter', context.encounter),
         effectiveDateTime: effective.toISOString(),
         valueQuantity: { value: celsius, unit: 'degrees Celsius', system: UCUM_SYSTEM, code: 'Cel' },
+    }
+}
+
+// Quantitative lab tests the picker offers. Modelled on the lab Observations of the DHIS2 lab-result reference
+// implementation (one LOINC test code per result), but with SI quantities instead of coded answers, and without
+// `category`: nav-epj's write contract accepts only the temperature-style shape and rejects category, component,
+// note, interpretation, referenceRange, identifier and extensions with a 400 (EXERCISES.md, Write-back shapes).
+// Presets are typical values for a demo, not clinical advice.
+export interface LabTest {
+    key: string
+    loinc: string
+    display: string
+    unit: { code: string; display: string }
+    min: number
+    max: number
+    decimals: number
+    presets: { label: string; value: number }[]
+}
+
+export const LAB_TESTS: readonly LabTest[] = [
+    {
+        key: 'crp',
+        loinc: C_REACTIVE_PROTEIN,
+        display: 'C reactive protein [Mass/volume] in Serum or Plasma',
+        unit: { code: 'mg/L', display: 'mg/L' },
+        min: 0,
+        max: 500,
+        decimals: 1,
+        presets: [
+            { label: 'Normal', value: 3 },
+            { label: 'Mildly raised', value: 25 },
+            { label: 'Raised', value: 80 },
+            { label: 'High', value: 180 },
+        ],
+    },
+    {
+        key: 'hemoglobin',
+        loinc: '718-7',
+        display: 'Hemoglobin [Mass/volume] in Blood',
+        unit: { code: 'g/dL', display: 'g/dL' },
+        min: 3,
+        max: 25,
+        decimals: 1,
+        presets: [
+            { label: 'Low', value: 9.5 },
+            { label: 'Normal', value: 14 },
+            { label: 'High', value: 18 },
+        ],
+    },
+    {
+        key: 'glucose',
+        loinc: '15074-8',
+        display: 'Glucose [Moles/volume] in Blood',
+        unit: { code: 'mmol/L', display: 'mmol/L' },
+        min: 1,
+        max: 50,
+        decimals: 1,
+        presets: [
+            { label: 'Low', value: 3.2 },
+            { label: 'Normal', value: 5 },
+            { label: 'Raised', value: 7.5 },
+            { label: 'High', value: 12 },
+        ],
+    },
+    {
+        key: 'creatinine',
+        loinc: '14682-9',
+        display: 'Creatinine [Moles/volume] in Serum or Plasma',
+        unit: { code: 'umol/L', display: 'µmol/L' },
+        min: 10,
+        max: 2000,
+        decimals: 0,
+        presets: [
+            { label: 'Normal', value: 75 },
+            { label: 'Mildly raised', value: 130 },
+            { label: 'Raised', value: 250 },
+        ],
+    },
+    {
+        key: 'leukocytes',
+        loinc: '6690-2',
+        display: 'Leukocytes [#/volume] in Blood by Automated count',
+        unit: { code: '10*9/L', display: '10⁹/L' },
+        min: 0,
+        max: 200,
+        decimals: 1,
+        presets: [
+            { label: 'Low', value: 2.5 },
+            { label: 'Normal', value: 7 },
+            { label: 'Raised', value: 14 },
+        ],
+    },
+]
+
+export function labTest(key: string): LabTest | undefined {
+    return LAB_TESTS.find((test) => test.key === key)
+}
+
+export function labObservation(
+    context: Context,
+    test: LabTest,
+    value: number,
+    effective = new Date(),
+): TemperatureObservation {
+    z.number().finite().min(test.min).max(test.max).parse(value)
+
+    return {
+        resourceType: 'Observation',
+        status: 'final',
+        code: { coding: [{ system: LOINC_SYSTEM, code: test.loinc, display: test.display }] },
+        subject: resourceReference('Patient', context.patient),
+        encounter: resourceReference('Encounter', context.encounter),
+        effectiveDateTime: effective.toISOString(),
+        valueQuantity: { value, unit: test.unit.display, system: UCUM_SYSTEM, code: test.unit.code },
+    }
+}
+
+// Same shape as a temperature: only the LOINC code and the UCUM unit differ.
+export function cReactiveProtein(context: Context, mgPerLitre: number, effective = new Date()): TemperatureObservation {
+    z.number().finite().parse(mgPerLitre)
+
+    return {
+        resourceType: 'Observation',
+        status: 'final',
+        code: { coding: [{ system: LOINC_SYSTEM, code: C_REACTIVE_PROTEIN, display: 'C reactive protein' }] },
+        subject: resourceReference('Patient', context.patient),
+        encounter: resourceReference('Encounter', context.encounter),
+        effectiveDateTime: effective.toISOString(),
+        valueQuantity: { value: mgPerLitre, unit: 'mg/L', system: UCUM_SYSTEM, code: 'mg/L' },
     }
 }
 
